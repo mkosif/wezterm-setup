@@ -1,0 +1,19 @@
+# OS / editor noise
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.swp
+*~
+
+# Local backups accidentally dropped in repo
+*.bak
+*.bak-*
+
+# Theme runtime state must never live here
+.wezterm-theme-index
+
+# Do not vendor full Nerd Font zip dumps or other families
+fonts/**/JetBrainsMonoNerdFont-*
+fonts/**/JetBrainsMonoNerdFontPropo-*
+fonts/**/JetBrainsMonoNL*
+fonts/**/*.zip
