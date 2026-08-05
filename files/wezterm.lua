@@ -9,7 +9,46 @@ end
 local is_windows = wezterm.target_triple:find("windows") ~= nil
 local home = os.getenv("USERPROFILE") or os.getenv("HOME") or ""
 local work_root = home .. "\\work"
-local pwsh = "C:\\Program Files\\PowerShell\\7\\pwsh.exe"
+
+-- Resolve PowerShell 7 on this machine (winget/MSI standard path first, then scoop).
+-- Install via:  .\scripts\Install-Pwsh.ps1   or   .\setup.ps1
+local function file_exists(path)
+  if not path or path == "" then
+    return false
+  end
+  local f = io.open(path, "rb")
+  if f then
+    f:close()
+    return true
+  end
+  return false
+end
+
+local function resolve_pwsh()
+  local candidates = {}
+  local function add(p)
+    if p and p ~= "" then
+      table.insert(candidates, p)
+    end
+  end
+  local pf = os.getenv("ProgramFiles")
+  local pf64 = os.getenv("ProgramW6432")
+  local localapp = os.getenv("LOCALAPPDATA")
+  add(pf and (pf .. "\\PowerShell\\7\\pwsh.exe"))
+  add(pf64 and (pf64 .. "\\PowerShell\\7\\pwsh.exe"))
+  add("C:\\Program Files\\PowerShell\\7\\pwsh.exe")
+  add(localapp and (localapp .. "\\PowerShell\\7\\pwsh.exe"))
+  add(home .. "\\scoop\\apps\\pwsh\\current\\pwsh.exe")
+  for _, p in ipairs(candidates) do
+    if file_exists(p) then
+      return p
+    end
+  end
+  -- Prefer standard path in error cases (Install-Pwsh puts it here).
+  return "C:\\Program Files\\PowerShell\\7\\pwsh.exe"
+end
+
+local pwsh = is_windows and resolve_pwsh() or "pwsh"
 -- Documents\\PowerShell profile is often blocked by Controlled Folder Access;
 -- load OLED FileInfo colors from ~/config instead.
 local pwsh_oled = home .. "\\config\\wezterm-pwsh.ps1"

@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   Install repo WezTerm config (+ Mono Nerd Font) onto this machine.
@@ -41,7 +41,19 @@ function Backup-IfExists([string]$Path) {
   return $true
 }
 
+# Shared font helper when present (same registration as scripts\Install-Fonts.ps1).
+$script:UseSharedFontInstall = $false
+$libPath = Join-Path $PSScriptRoot 'scripts\lib.ps1'
+if (Test-Path -LiteralPath $libPath) {
+  . $libPath
+  $script:UseSharedFontInstall = $true
+}
+
 function Install-UserFont([string]$TtfPath) {
+  if ($script:UseSharedFontInstall) {
+    return (Install-UserFontFile -TtfPath $TtfPath)
+  }
+
   $name = [IO.Path]::GetFileName($TtfPath)
   $destDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
   if (-not (Test-Path -LiteralPath $destDir)) {
@@ -50,7 +62,7 @@ function Install-UserFont([string]$TtfPath) {
   $dest = Join-Path $destDir $name
   Copy-Item -LiteralPath $TtfPath -Destination $dest -Force
 
-  # Register for current user (no admin). Display name ≈ family for WezTerm lookup.
+  # Register for current user (no admin). Display name  family for WezTerm lookup.
   $regPath = 'HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
   if (-not (Test-Path -LiteralPath $regPath)) {
     New-Item -Path $regPath -Force | Out-Null
@@ -58,6 +70,7 @@ function Install-UserFont([string]$TtfPath) {
   # Value name Windows shows; path is absolute for per-user fonts
   $valueName = "$name (TrueType)"
   New-ItemProperty -Path $regPath -Name $valueName -Value $dest -PropertyType String -Force | Out-Null
+  return $dest
 }
 
 Write-Host "import  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Cyan
