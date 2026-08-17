@@ -74,16 +74,19 @@ config.default_cwd = file_exists(work_root) and work_root or home
 config.window_close_confirmation = "NeverPrompt"
 config.exit_behavior = "CloseOnCleanExit"
 
--- Stable on this Windows build (WebGpu flickered).
-config.front_end = "OpenGL"
-config.max_fps = 60
--- 1 fps made leftover cursor/title animation look like a broken blink.
-config.animation_fps = 60
+-- 20240203 OpenGL on Windows often hits Mesa/ANGLE: janky scroll, shaky caret.
+-- 880M + WebGpu HighPerformance is DX12; LowPower was the old flicker path.
+config.front_end = "WebGpu"
+config.webgpu_power_preference = "HighPerformance"
+config.max_fps = 120
+config.animation_fps = 120
 
 -- Grok / modern TUI
 config.enable_kitty_graphics = true
 config.enable_kitty_keyboard = true
 config.allow_win32_input_mode = false
+-- Windows IME composition makes the WezTerm caret jitter; Turkish does not need it.
+config.use_ime = false
 
 config.font = wezterm.font_with_fallback({
   { family = "JetBrainsMono NFM", weight = "Regular" },
@@ -129,13 +132,10 @@ config.window_frame = {
   button_hover_bg = theme.purple,
 }
 
--- Grok hides/shows the hardware cursor on every idle paint. Reverse-video
--- turned that into a full-cell strobe. A thin steady bar is the least visible
--- leftover; WezTerm cannot block the app's cursor hide.
 config.cursor_blink_rate = 0
 config.cursor_blink_ease_in = "Constant"
 config.cursor_blink_ease_out = "Constant"
-config.default_cursor_style = "SteadyBar"
+config.default_cursor_style = "SteadyBlock"
 config.force_reverse_video_cursor = false
 config.audible_bell = "Disabled"
 
