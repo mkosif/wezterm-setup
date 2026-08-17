@@ -1,10 +1,14 @@
-# Loaded by WezTerm on shell start (Documents profile is CFA-protected).
-# Keep this light: no starship (git status overhead).
-# Type `keys` anytime for the full cheatsheet.
+# WezTerm / pwsh init. Loaded by WezTerm default_prog (Documents $PROFILE is CFA-blocked).
+# Safe to dot-source twice.
+if ($global:KosifWezInit) { return }
+$global:KosifWezInit = $true
+
+chcp 65001 | Out-Null
+$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
 
 $script:WezKeysPath = Join-Path $env:USERPROFILE "config\wezterm-keys.md"
 
-# --- Cheatsheet: keys / helpme ---
 function global:keys {
     $path = $script:WezKeysPath
     if (-not (Test-Path -LiteralPath $path)) {
@@ -13,90 +17,165 @@ function global:keys {
     }
     if (Get-Command bat -ErrorAction SilentlyContinue) {
         bat --paging=never --style=plain --language=markdown $path
-    } else {
+    }
+    else {
         Get-Content -LiteralPath $path -Raw | Write-Host
     }
 }
 Set-Alias -Name helpme -Value keys -Scope Global -Force
 
-# Quiet one-liner so you remember it exists
-Write-Host "  keys  " -NoNewline -ForegroundColor Black -BackgroundColor DarkCyan
-Write-Host " shortcut cheatsheet" -ForegroundColor DarkGray
-
-# --- OLED FileInfo colors (no light directory backgrounds) ---
-if ($null -ne $PSStyle -and $null -ne $PSStyle.FileInfo) {
-    $PSStyle.FileInfo.Directory    = "`e[38;2;121;192;255;1m"
-    $PSStyle.FileInfo.SymbolicLink = "`e[38;2;86;212;221;1m"
-    $PSStyle.FileInfo.Executable   = "`e[38;2;86;240;160;1m"
-    $PSStyle.FileInfo.Extension['.md']   = "`e[38;2;210;168;255m"
-    $PSStyle.FileInfo.Extension['.json'] = "`e[38;2;240;214;106m"
-    $PSStyle.FileInfo.Extension['.ps1']  = "`e[38;2;86;240;160m"
-    $PSStyle.FileInfo.Extension['.py']   = "`e[38;2;86;240;160m"
-    $PSStyle.FileInfo.Extension['.ts']   = "`e[38;2;121;192;255m"
-    $PSStyle.FileInfo.Extension['.js']   = "`e[38;2;240;214;106m"
+function global:boot {
+    $bootPath = Join-Path $env:USERPROFILE "config\ai\BOOTSTRAP.md"
+    if (-not (Test-Path -LiteralPath $bootPath)) {
+        Write-Host "Missing: $bootPath" -ForegroundColor Red
+        return
+    }
+    Get-Content -LiteralPath $bootPath -Raw | Set-Clipboard
+    Write-Output "BOOTSTRAP copied to clipboard"
 }
 
-# --- Tell WezTerm the real cwd (OSC 7) ---
+# OLED: directory names as bright FG, never a light background.
+if ($null -ne $PSStyle -and $null -ne $PSStyle.FileInfo) {
+    $PSStyle.FileInfo.Directory = "`e[38;2;121;192;255;1m"
+    $PSStyle.FileInfo.SymbolicLink = "`e[38;2;86;212;221;1m"
+    $PSStyle.FileInfo.Executable = "`e[38;2;86;240;160;1m"
+    $PSStyle.FileInfo.Extension['.md'] = "`e[38;2;210;168;255m"
+    $PSStyle.FileInfo.Extension['.json'] = "`e[38;2;240;214;106m"
+    $PSStyle.FileInfo.Extension['.ps1'] = "`e[38;2;86;240;160m"
+    $PSStyle.FileInfo.Extension['.py'] = "`e[38;2;86;240;160m"
+    $PSStyle.FileInfo.Extension['.ts'] = "`e[38;2;121;192;255m"
+    $PSStyle.FileInfo.Extension['.js'] = "`e[38;2;240;214;106m"
+}
+
+# OSC 7 so WezTerm knows the real cwd (new tab / Explorer / status).
 function global:prompt {
     $loc = $executionContext.SessionState.Path.CurrentLocation
     $osc7 = ""
     if ($loc.Provider.Name -eq "FileSystem") {
         $esc = [char]27
-        $provider_path = $loc.ProviderPath -Replace "\\", "/"
+        $provider_path = $loc.ProviderPath -replace "\\", "/"
         $osc7 = "${esc}]7;file://${env:COMPUTERNAME}/${provider_path}${esc}\"
     }
-    "${osc7}PS $loc$('>' * ($nestedPromptLevel + 1)) "
+    $short = [string]$loc.Path
+    if ($env:USERPROFILE -and $short.StartsWith($env:USERPROFILE, [StringComparison]::OrdinalIgnoreCase)) {
+        $short = "~" + $short.Substring($env:USERPROFILE.Length)
+    }
+    "${osc7}$short$('>' * ($nestedPromptLevel + 1)) "
 }
 
-# --- zoxide: fast jump (no git, no starship) ---
-#   z whisper   z work   zi (interactive if fzf present)
 if (Get-Command zoxide -ErrorAction SilentlyContinue) {
     Invoke-Expression (& { zoxide init powershell | Out-String })
 }
 
-# --- eza: better ls (icons need Nerd Font — you have it) ---
 if (Get-Command eza -ErrorAction SilentlyContinue) {
     Remove-Item Alias:ls -Force -ErrorAction SilentlyContinue
     function global:ls { eza --group-directories-first --icons=auto @args }
-    # no --git here (keeps ll fast; use `lg` / lazygit when you want git UI)
     function global:ll { eza -la --group-directories-first --icons=auto @args }
     function global:lt { eza -laT --group-directories-first --icons=auto -L 2 @args }
 }
 
-# --- bat: nicer file view (git/delta stay separate) ---
 if (Get-Command bat -ErrorAction SilentlyContinue) {
     function global:cat { bat --paging=never --style=plain @args }
     function global:batp { bat @args }
 }
 
-# --- navigation / open helpers ---
 function global:.. { Set-Location .. }
 function global:... { Set-Location ..\.. }
-function global:ww { Set-Location (Join-Path $env:USERPROFILE 'work') }
+function global:ww { Set-Location (Join-Path $env:USERPROFILE "work") }
 function global:home { Set-Location $env:USERPROFILE }
 function global:o {
-    # open cwd (or path) in Explorer
     if ($args.Count -gt 0) { explorer.exe @args } else { explorer.exe . }
 }
 function global:cpath {
-    # copy cwd to clipboard
     Set-Clipboard -Value (Get-Location).Path
     Write-Host "copied: $((Get-Location).Path)"
 }
 
-# --- git / tools shortcuts (only if installed) ---
 if (Get-Command lazygit -ErrorAction SilentlyContinue) {
     Set-Alias -Name lg -Value lazygit -Scope Global -Force
 }
+
+# Interactive `grok` / `gg` → separate WezTerm (Grok profile). CLI subcommands stay here.
+function global:grok {
+    $grokExe = Join-Path $env:USERPROFILE ".grok\bin\grok.exe"
+    if (-not (Test-Path -LiteralPath $grokExe)) {
+        $found = Get-Command grok.exe -ErrorAction SilentlyContinue
+        if ($found) { $grokExe = $found.Source }
+    }
+    if (-not $grokExe -or -not (Test-Path -LiteralPath $grokExe)) {
+        Write-Error "grok.exe not found"
+        return
+    }
+
+    if ($env:WEZTERM_GROK_PROFILE -eq "1") {
+        & $grokExe @args
+        return
+    }
+
+    $cli = @(
+        "agent", "completions", "doctor", "du", "disk-usage", "export", "help",
+        "inspect", "leader", "login", "logout", "mcp", "memory", "models",
+        "plugin", "sessions", "setup", "trace", "update", "version", "v",
+        "worktree", "wrap"
+    )
+    $headlessFlags = @(
+        "-h", "--help", "-v", "--version", "-p", "--single",
+        "--output-format", "--json-schema", "--prompt-file", "--prompt-json"
+    )
+
+    $headless = $false
+    if ($args.Count -gt 0) {
+        if ($cli -contains [string]$args[0]) {
+            $headless = $true
+        }
+        else {
+            foreach ($a in $args) {
+                if ($headlessFlags -contains [string]$a) {
+                    $headless = $true
+                    break
+                }
+            }
+        }
+    }
+
+    $cfg = Join-Path $env:USERPROFILE ".wezterm-grok.lua"
+    $gui = "C:\Program Files\WezTerm\wezterm-gui.exe"
+    if (-not (Test-Path -LiteralPath $gui)) {
+        $wez = Get-Command wezterm -ErrorAction SilentlyContinue
+        if ($wez) {
+            $sibling = Join-Path (Split-Path -Parent $wez.Source) "wezterm-gui.exe"
+            if (Test-Path -LiteralPath $sibling) { $gui = $sibling }
+        }
+    }
+    if (-not $headless -and (Test-Path -LiteralPath $gui) -and (Test-Path -LiteralPath $cfg)) {
+        $cwd = (Get-Location).Path
+        $extra = foreach ($a in $args) { ' "' + ([string]$a).Replace('"', '\"') + '"' }
+        # WMI Create runs as a service child — not in WezTerm's job object.
+        # cmd start / Start-Process stay in the pane job; closing this window then kills Grok.
+        $commandLine = '"{0}" --config-file "{1}" start --always-new-process --class WezTermGrok --cwd "{2}" -- "{3}"{4}' -f @(
+            $gui,
+            $cfg,
+            $cwd.Replace('"', ''),
+            $grokExe,
+            (-join $extra)
+        )
+        Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+            CommandLine      = $commandLine
+            CurrentDirectory = $cwd
+        } | Out-Null
+        return
+    }
+
+    & $grokExe @args
+}
+Set-Alias -Name gg -Value grok -Scope Global -Force
 if (Get-Command rg -ErrorAction SilentlyContinue) {
-    # keep name rg; add a short search helper
-    function global:ff { rg -n --hidden --glob '!.git' @args }
+    function global:ff { rg -n --hidden --glob "!.git" @args }
 }
 if (Get-Command fd -ErrorAction SilentlyContinue) {
     function global:fdf { fd --hidden --exclude .git @args }
 }
 
-# --- PSReadLine: history menu + prediction (fast, no git) ---
 if (Get-Module -ListAvailable -Name PSReadLine) {
     Import-Module PSReadLine
     Set-PSReadLineOption -EditMode Windows -ErrorAction SilentlyContinue
@@ -106,8 +185,10 @@ if (Get-Module -ListAvailable -Name PSReadLine) {
     Set-PSReadLineKeyHandler -Key DownArrow -Function HistorySearchForward
     try {
         Set-PSReadLineOption -PredictionSource History
-        Set-PSReadLineOption -PredictionViewStyle ListView
-    } catch {
-        # older PSReadLine — ignore
+        # ListView steals half the viewport. Inline stays out of the way.
+        Set-PSReadLineOption -PredictionViewStyle InlineView
+    }
+    catch {
+        # older PSReadLine
     }
 }

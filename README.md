@@ -70,6 +70,7 @@ docs/NEW-MACHINE.md       detailed new-machine guide
 | Repo | Machine |
 |------|---------|
 | `files/wezterm.lua` | `~\.wezterm.lua` |
+| `files/wezterm-grok.lua` | `~\.wezterm-grok.lua` (Grok host; separate process) |
 | `files/wezterm-pwsh.ps1` | `~\config\wezterm-pwsh.ps1` |
 | `files/wezterm-keys.md` | `~\config\wezterm-keys.md` |
 | `files/powershell-profile-snippet.ps1` | `~\config\powershell-profile-snippet.ps1` |

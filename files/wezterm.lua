@@ -10,8 +10,6 @@ local is_windows = wezterm.target_triple:find("windows") ~= nil
 local home = os.getenv("USERPROFILE") or os.getenv("HOME") or ""
 local work_root = home .. "\\work"
 
--- Resolve PowerShell 7 on this machine (winget/MSI standard path first, then scoop).
--- Install via:  .\scripts\Install-Pwsh.ps1   or   .\setup.ps1
 local function file_exists(path)
   if not path or path == "" then
     return false
@@ -24,33 +22,51 @@ local function file_exists(path)
   return false
 end
 
+-- Prefer the MSI/winget install. Store/AppX aliases are 0-byte stubs and
+-- WezTerm cannot launch them as default_prog.
 local function resolve_pwsh()
-  local candidates = {}
-  local function add(p)
-    if p and p ~= "" then
-      table.insert(candidates, p)
-    end
-  end
   local pf = os.getenv("ProgramFiles")
   local pf64 = os.getenv("ProgramW6432")
   local localapp = os.getenv("LOCALAPPDATA")
-  add(pf and (pf .. "\\PowerShell\\7\\pwsh.exe"))
-  add(pf64 and (pf64 .. "\\PowerShell\\7\\pwsh.exe"))
-  add("C:\\Program Files\\PowerShell\\7\\pwsh.exe")
-  add(localapp and (localapp .. "\\PowerShell\\7\\pwsh.exe"))
-  add(home .. "\\scoop\\apps\\pwsh\\current\\pwsh.exe")
+  local candidates = {
+    pf and (pf .. "\\PowerShell\\7\\pwsh.exe"),
+    pf64 and (pf64 .. "\\PowerShell\\7\\pwsh.exe"),
+    "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+    localapp and (localapp .. "\\PowerShell\\7\\pwsh.exe"),
+    home .. "\\scoop\\apps\\pwsh\\current\\pwsh.exe",
+  }
   for _, p in ipairs(candidates) do
     if file_exists(p) then
       return p
     end
   end
-  -- Prefer standard path in error cases (Install-Pwsh puts it here).
   return "C:\\Program Files\\PowerShell\\7\\pwsh.exe"
 end
 
+-- wezterm.exe is a CONSOLE app: Start/cmd wraps it in Windows Terminal and
+-- killing that console kills Grok. Always launch wezterm-gui.exe (GUI).
+local function resolve_wezterm_gui()
+  local pf = os.getenv("ProgramFiles")
+  local candidates = {
+    pf and (pf .. "\\WezTerm\\wezterm-gui.exe"),
+    "C:\\Program Files\\WezTerm\\wezterm-gui.exe",
+  }
+  for _, p in ipairs(candidates) do
+    if file_exists(p) then
+      return p
+    end
+  end
+  return "C:\\Program Files\\WezTerm\\wezterm-gui.exe"
+end
+
+local wezterm_gui = resolve_wezterm_gui()
+local grok_exe = home .. "\\.grok\\bin\\grok.exe"
+local grok_cfg = home .. "\\.wezterm-grok.lua"
+
 local pwsh = is_windows and resolve_pwsh() or "pwsh"
--- Documents\\PowerShell profile is often blocked by Controlled Folder Access;
--- load OLED FileInfo colors from ~/config instead.
+-- Documents\PowerShell $PROFILE is blocked by Controlled Folder Access, so
+-- WezTerm dotsources ~/config/wezterm-pwsh.ps1 itself. -NoExit keeps the
+-- session interactive after the init script returns.
 local pwsh_oled = home .. "\\config\\wezterm-pwsh.ps1"
 local default_shell = is_windows
     and {
@@ -58,18 +74,14 @@ local default_shell = is_windows
       "-NoLogo",
       "-NoExit",
       "-Command",
-      (". \"" .. pwsh_oled .. "\""),
+      (". '" .. pwsh_oled:gsub("'", "''") .. "'"),
     }
   or { os.getenv("SHELL") or "sh", "-l" }
 
--- OLED visual rules (all themes):
--- * UI chrome bg is pure #000000 (pixel-off → less battery, less smear)
--- * fg is soft-white (night: less glare) but still high luminance (day: readable)
--- * dim/muted have a luminance floor so low system brightness stays legible
--- * accents stay bright; selection is clearly visible on black
+-- OLED: chrome stays #000000. ANSI 4/6 stay mid-dark so white-on-blue dirs
+-- (PowerShell default) stay readable if FileInfo colors fail to load.
 local themes = {
   {
-    -- Default: night-friendly, still OK outdoors with font size 13
     label = "OLED Soft (Dracula)",
     scheme = "Dracula (Official)",
     bg_alt = "#000000",
@@ -85,7 +97,6 @@ local themes = {
     selection = "#3d3f5c",
   },
   {
-    -- Punchier text for sun / high ambient light (Ctrl+Space then t)
     label = "OLED Day (High Contrast)",
     scheme = "Dracula (Official)",
     bg_alt = "#000000",
@@ -180,11 +191,6 @@ local function active_theme()
 end
 
 local function theme_overrides(theme)
-  -- Pure black everywhere we can: OLED pixels stay off under empty chrome.
-  --
-  -- ANSI 4 (blue) and 6 (cyan) must NOT be pastel-light: PowerShell colors
-  -- directories as white-on-blue (bg=ansi4). Light cyan bg + light fg = unreadable.
-  -- Keep blues/cyans mid-dark so they work as background AND as foreground.
   return {
     foreground = theme.fg,
     background = "#000000",
@@ -196,24 +202,24 @@ local function theme_overrides(theme)
     scrollbar_thumb = theme.dim,
     split = theme.dim,
     ansi = {
-      "#000000", -- 0 black
-      "#e84a5f", -- 1 red
-      "#3dd68c", -- 2 green
-      "#d4b84a", -- 3 yellow (not neon; readable)
-      "#1f6feb", -- 4 blue  ← PS directory background; white-on-this must be OK
-      "#a371f7", -- 5 magenta
-      "#1a7f8c", -- 6 cyan  ← mid teal if anything uses cyan bg
-      theme.fg,  -- 7 white
+      "#000000",
+      "#e84a5f",
+      "#3dd68c",
+      "#d4b84a",
+      "#1f6feb", -- PS directory background; must stay mid-dark
+      "#a371f7",
+      "#1a7f8c",
+      theme.fg,
     },
     brights = {
-      theme.dim, -- 8
-      "#ff7b8a", -- 9
-      "#56f0a0", -- 10 green bright (headers, timestamps)
-      "#f0d66a", -- 11
-      "#79c0ff", -- 12 bright blue (FG accents / links)
-      "#d2a8ff", -- 13
-      "#56d4dd", -- 14 bright cyan (FG only — dirs should use this, not bg)
-      "#ffffff", -- 15
+      theme.dim,
+      "#ff7b8a",
+      "#56f0a0",
+      "#f0d66a",
+      "#79c0ff",
+      "#d2a8ff",
+      "#56d4dd",
+      "#ffffff",
     },
     tab_bar = {
       background = "#000000",
@@ -222,7 +228,6 @@ local function theme_overrides(theme)
         fg_color = "#000000",
         intensity = "Bold",
       },
-      -- Slightly lifted from pure black so inactive tabs don't melt into each other
       inactive_tab = {
         bg_color = "#1a1b26",
         fg_color = theme.muted,
@@ -245,7 +250,7 @@ end
 
 local function window_frame_for(theme)
   return {
-    font = wezterm.font({ family = "JetBrainsMono Nerd Font Mono", weight = "Medium" }),
+    font = wezterm.font({ family = "JetBrainsMono NFM", weight = "Medium" }),
     font_size = 10.0,
     active_titlebar_bg = theme.bg_deep,
     inactive_titlebar_bg = theme.bg_deep,
@@ -267,134 +272,138 @@ local function basename(path)
   return path:match("([^/\\]+)$") or path
 end
 
-local function current_dir(pane)
-  local cwd = pane:get_current_working_dir()
+local function url_to_win_path(cwd)
   if not cwd then
-    return ""
+    return nil
   end
-  return basename(cwd.file_path or tostring(cwd))
-end
-
-local function current_path(pane)
-  local cwd = pane:get_current_working_dir()
-  if not cwd then
-    return ""
-  end
-
   local path = cwd.file_path or tostring(cwd)
-  path = tostring(path):gsub("^file://", ""):gsub("%%20", " ")
+  path = tostring(path):gsub("^file:///", ""):gsub("^file://", ""):gsub("%%20", " ")
+  path = path:gsub("^/([A-Za-z]):", "%1:"):gsub("/", "\\")
+  if path == "" or path == "nil" then
+    return nil
+  end
   return path
 end
 
-local function process_name(pane)
-  return basename(pane:get_foreground_process_name() or "")
+-- format-tab-title / format-window-title receive PaneInformation (fields only).
+-- Calling :get_current_working_dir() on those throws and WezTerm falls back to
+-- overlapping "pwsh.exe" titles. MuxPane methods exist only in status/events.
+local function info_path(info)
+  if not info then
+    return nil
+  end
+  return url_to_win_path(info.current_working_dir)
 end
 
-local git_cache = {}
+local function info_dir(info)
+  return basename(info_path(info) or "")
+end
 
-local function git_branch_for_path(path)
-  if not path or path == "" then
+local function info_process(info)
+  if not info then
     return ""
   end
+  return basename(info.foreground_process_name or info.title or ""):gsub("%.exe$", ""):gsub("%.EXE$", "")
+end
 
-  local now = os.time()
-  local cached = git_cache[path]
-  if cached and now - cached.time < 5 then
-    return cached.value
+local function mux_path(pane)
+  if not pane then
+    return nil
   end
-
-  local ok, stdout = wezterm.run_child_process({
-    "git",
-    "-C",
-    path,
-    "symbolic-ref",
-    "--quiet",
-    "--short",
-    "HEAD",
-  })
-
-  local branch = ""
-  if ok then
-    branch = stdout:gsub("%s+$", "")
-  else
-    local detached_ok, detached_stdout = wezterm.run_child_process({
-      "git",
-      "-C",
-      path,
-      "rev-parse",
-      "--short",
-      "HEAD",
-    })
-    if detached_ok then
-      branch = detached_stdout:gsub("%s+$", "")
-    end
+  local ok, cwd = pcall(function()
+    return pane:get_current_working_dir()
+  end)
+  if not ok then
+    return url_to_win_path(pane.current_working_dir)
   end
+  return url_to_win_path(cwd)
+end
 
-  git_cache[path] = {
-    time = now,
-    value = branch,
-  }
-  return branch
+local function mux_dir(pane)
+  return basename(mux_path(pane) or "")
+end
+
+local function mux_process(pane)
+  if not pane then
+    return ""
+  end
+  local ok, name = pcall(function()
+    return pane:get_foreground_process_name()
+  end)
+  if not ok or not name then
+    name = pane.foreground_process_name
+  end
+  return basename(name or ""):gsub("%.exe$", ""):gsub("%.EXE$", "")
+end
+
+local function tab_label(pane_info)
+  local title = info_dir(pane_info)
+  if title == "" then
+    title = info_process(pane_info)
+  end
+  if title == "" then
+    title = "shell"
+  end
+  return title
 end
 
 config.automatically_reload_config = true
 config.check_for_updates = false
 config.default_prog = default_shell
-config.default_cwd = work_root
+config.default_cwd = file_exists(work_root) and work_root or home
 config.default_workspace = "work"
-config.window_close_confirmation = "AlwaysPrompt"
+config.window_close_confirmation = "NeverPrompt"
 config.exit_behavior = "CloseOnCleanExit"
 config.color_scheme = active_theme().scheme
-config.front_end = "WebGpu"
-config.webgpu_power_preference = "LowPower"
-config.freetype_load_flags = "NO_HINTING"
-config.freetype_load_target = "Light"
-config.freetype_render_target = "Normal"
 
--- Inline images in the terminal:
---   iTerm2 protocol  →  wezterm imgcat path\to\image.png
---   Kitty graphics   →  tools that speak the Kitty image protocol (chafa, etc.)
--- Sixel is experimental and limited on Windows; Kitty/iTerm cover most free tools.
+-- 20240203 WebGpu+LowPower on Windows: flicker / input lag / rare panics.
+-- OpenGL is the stable backend for this build.
+config.front_end = "OpenGL"
+config.max_fps = 60
+config.animation_fps = 60
+
 config.enable_kitty_graphics = true
 
--- Installed on this machine: JetBrainsMono Nerd Font (Mono)
 config.font = wezterm.font_with_fallback({
+  { family = "JetBrainsMono NFM", weight = "Regular" },
   { family = "JetBrainsMono Nerd Font Mono", weight = "Regular" },
+  { family = "JetBrainsMono NF", weight = "Regular" },
   { family = "JetBrainsMono Nerd Font", weight = "Regular" },
-  { family = "JetBrains Mono", weight = "Regular" },
-  "Cascadia Code",
   "Cascadia Mono",
   "Segoe UI Emoji",
 })
--- Slightly larger + more line spacing: biggest free win for outdoor + low-brightness reading
 config.font_size = 13.0
-config.line_height = 1.22
-config.cell_width = 1.0
+config.line_height = 1.1
 config.harfbuzz_features = { "calt=0", "clig=0", "liga=0" }
 config.warn_about_missing_glyphs = false
-config.unicode_version = 14
 config.bold_brightens_ansi_colors = true
 
 config.window_padding = {
-  left = 14,
-  right = 14,
-  top = 10,
-  bottom = 10,
+  left = 10,
+  right = 10,
+  top = 8,
+  bottom = 8,
 }
--- Fully opaque pure black only — transparency/Acrylic keeps pixels lit (worse battery on OLED)
 config.window_background_opacity = 1.0
 config.text_background_opacity = 1.0
 config.win32_system_backdrop = "Disable"
-config.window_decorations = "INTEGRATED_BUTTONS|RESIZE"
-config.initial_cols = 132
-config.initial_rows = 36
+-- INTEGRATED_BUTTONS are WezTerm-drawn; on this Windows build clicks leak
+-- through to the window underneath. Native caption buttons do not.
+config.window_decorations = "TITLE|RESIZE"
+config.use_fancy_tab_bar = true
+config.hide_tab_bar_if_only_one_tab = false
+config.tab_bar_at_bottom = false
+config.show_new_tab_button_in_tab_bar = true
+config.show_tab_index_in_tab_bar = false
+config.tab_max_width = 32
+config.switch_to_last_active_tab_when_closing_tab = true
+
+config.initial_cols = 120
+config.initial_rows = 34
 config.adjust_window_size_when_changing_font_size = false
-config.max_fps = 120
-config.animation_fps = 60
--- Inactive panes: keep readable at low system brightness (was too dim)
 config.inactive_pane_hsb = {
-  saturation = 0.85,
-  brightness = 0.78,
+  saturation = 0.9,
+  brightness = 0.82,
 }
 config.window_frame = window_frame_for(active_theme())
 
@@ -410,26 +419,16 @@ config.visual_bell = {
   fade_out_duration_ms = 120,
 }
 
-config.cursor_blink_rate = 500
+config.cursor_blink_rate = 530
 config.default_cursor_style = "BlinkingBar"
 config.force_reverse_video_cursor = false
 
-config.scrollback_lines = 50000
+config.scrollback_lines = 20000
 config.enable_scroll_bar = false
-config.use_fancy_tab_bar = false
-config.hide_tab_bar_if_only_one_tab = false
-config.tab_bar_at_bottom = false
-config.show_new_tab_button_in_tab_bar = true
-config.show_tab_index_in_tab_bar = false
-config.tab_max_width = 28
-config.switch_to_last_active_tab_when_closing_tab = true
-config.pane_focus_follows_mouse = true
-config.swallow_mouse_click_on_pane_focus = true
--- Better key handling for Windows console apps (fzf, pagers, some TUIs)
+config.pane_focus_follows_mouse = false
+config.swallow_mouse_click_on_pane_focus = false
 config.allow_win32_input_mode = true
--- Status bar refresh (git branch cache still 5s; less frequent UI work)
-config.status_update_interval = 2000
--- Windows-friendly paste (CRLF from browser/editor → LF)
+config.status_update_interval = 1000
 config.canonicalize_pasted_newlines = "LineFeed"
 config.skip_close_confirmation_for_processes_named = {
   "bash",
@@ -444,7 +443,6 @@ config.skip_close_confirmation_for_processes_named = {
 }
 
 config.hyperlink_rules = wezterm.default_hyperlink_rules()
--- Also link bare www. URLs and Windows paths lightly via quick-select; hyperlinks stay standard.
 config.selection_word_boundary = " \t\n{}[]()\"'`,;:"
 config.quick_select_patterns = {
   [[https?://[^\s"'<>]+]],
@@ -460,34 +458,33 @@ config.set_environment_variables = {
   COLORTERM = "truecolor",
 }
 
--- Ctrl+Space: less clash with PowerShell/readline than Ctrl+a
-config.leader = { key = "Space", mods = "CTRL", timeout_milliseconds = 1000 }
+-- Ctrl+Space is PSReadLine MenuComplete (Windows mode). Do not steal it.
+config.leader = { key = "Space", mods = "CTRL|SHIFT", timeout_milliseconds = 1500 }
 
 config.launch_menu = {
-  {
-    label = "PowerShell 7",
-    args = default_shell,
-  },
-  {
-    label = "Windows PowerShell",
-    args = { "powershell.exe", "-NoLogo" },
-  },
-  {
-    label = "Command Prompt",
-    args = { "cmd.exe" },
-  },
-  {
-    label = "WSL",
-    args = { "wsl.exe" },
-  },
+  { label = "PowerShell 7", args = default_shell },
+  { label = "Windows PowerShell", args = { "powershell.exe", "-NoLogo" } },
+  { label = "Command Prompt", args = { "cmd.exe" } },
+  { label = "WSL", args = { "wsl.exe" } },
 }
 
+local copy_or_interrupt = wezterm.action_callback(function(window, pane)
+  local sel = window:get_selection_text_for_pane(pane)
+  if sel and sel ~= "" then
+    window:perform_action(act.CopyTo("Clipboard"), pane)
+    window:perform_action(act.ClearSelection, pane)
+  else
+    window:perform_action(act.SendKey({ key = "c", mods = "CTRL" }), pane)
+  end
+end)
+
 config.keys = {
+  -- Default for this combo is QuickSelect; leader needs the key free.
+  { key = "Space", mods = "CTRL|SHIFT", action = act.DisableDefaultAssignment },
   { key = "P", mods = "CTRL|SHIFT", action = act.ActivateCommandPalette },
   { key = "L", mods = "CTRL|SHIFT", action = act.ShowLauncherArgs({ flags = "FUZZY|LAUNCH_MENU_ITEMS" }) },
   { key = "S", mods = "CTRL|SHIFT", action = act.ShowLauncherArgs({ flags = "FUZZY|WORKSPACES" }) },
   { key = "R", mods = "CTRL|SHIFT", action = act.ReloadConfiguration },
-  -- Open this config in the default editor / associated app
   {
     key = ",",
     mods = "CTRL|SHIFT",
@@ -497,23 +494,36 @@ config.keys = {
   },
 
   { key = "T", mods = "CTRL|SHIFT", action = act.SpawnTab("CurrentPaneDomain") },
-  { key = "W", mods = "CTRL|SHIFT", action = act.CloseCurrentTab({ confirm = true }) },
+  { key = "W", mods = "CTRL|SHIFT", action = act.CloseCurrentTab({ confirm = false }) },
   { key = "N", mods = "CTRL|SHIFT", action = act.SpawnWindow },
   { key = "Tab", mods = "CTRL", action = act.ActivateTabRelative(1) },
   { key = "Tab", mods = "CTRL|SHIFT", action = act.ActivateTabRelative(-1) },
   { key = "F11", mods = "NONE", action = act.ToggleFullScreen },
 
-  -- Font size (explicit, Windows-friendly)
   { key = "=", mods = "CTRL", action = act.IncreaseFontSize },
   { key = "+", mods = "CTRL", action = act.IncreaseFontSize },
   { key = "-", mods = "CTRL", action = act.DecreaseFontSize },
   { key = "0", mods = "CTRL", action = act.ResetFontSize },
 
+  -- Windows Terminal muscle memory
+  { key = "c", mods = "CTRL", action = copy_or_interrupt },
+  { key = "v", mods = "CTRL", action = act.PasteFrom("Clipboard") },
+  { key = "C", mods = "CTRL|SHIFT", action = act.CopyTo("Clipboard") },
+  { key = "V", mods = "CTRL|SHIFT", action = act.PasteFrom("Clipboard") },
+  { key = "F", mods = "CTRL|SHIFT", action = act.Search("CurrentSelectionOrEmptyString") },
+  { key = "X", mods = "CTRL|SHIFT", action = act.ActivateCopyMode },
+  { key = "Q", mods = "CTRL|SHIFT", action = act.QuickSelect },
+  { key = "O", mods = "CTRL|SHIFT", action = act.EmitEvent("toggle-opacity") },
+  { key = "G", mods = "CTRL|SHIFT", action = act.EmitEvent("open-grok") },
+  { key = "K", mods = "CTRL|SHIFT", action = act.ClearScrollback("ScrollbackAndViewport") },
+  { key = "d", mods = "ALT|SHIFT", action = act.SplitHorizontal({ domain = "CurrentPaneDomain" }) },
+  { key = "-", mods = "ALT|SHIFT", action = act.SplitVertical({ domain = "CurrentPaneDomain" }) },
+
   { key = "-", mods = "LEADER", action = act.SplitVertical({ domain = "CurrentPaneDomain" }) },
   { key = "s", mods = "LEADER", action = act.SplitVertical({ domain = "CurrentPaneDomain" }) },
   { key = "\\", mods = "LEADER", action = act.SplitHorizontal({ domain = "CurrentPaneDomain" }) },
   { key = "v", mods = "LEADER", action = act.SplitHorizontal({ domain = "CurrentPaneDomain" }) },
-  { key = "x", mods = "LEADER", action = act.CloseCurrentPane({ confirm = true }) },
+  { key = "x", mods = "LEADER", action = act.CloseCurrentPane({ confirm = false }) },
   { key = "z", mods = "LEADER", action = act.TogglePaneZoomState },
   { key = "p", mods = "LEADER", action = act.PaneSelect },
   { key = "S", mods = "LEADER", action = act.PaneSelect({ mode = "SwapWithActive" }) },
@@ -523,11 +533,10 @@ config.keys = {
   { key = "o", mods = "LEADER", action = act.EmitEvent("toggle-opacity") },
   { key = "t", mods = "LEADER", action = act.EmitEvent("cycle-theme") },
   { key = "c", mods = "LEADER", action = act.ClearScrollback("ScrollbackAndViewport") },
-  -- Open current pane dir in Explorer / copy path (needs OSC 7 cwd tracking)
   { key = "e", mods = "LEADER", action = act.EmitEvent("open-in-explorer") },
   { key = "y", mods = "LEADER", action = act.EmitEvent("copy-cwd") },
   { key = "g", mods = "LEADER", action = act.EmitEvent("open-lazygit") },
-  -- Print shortcut cheatsheet in the shell (`keys` command)
+  { key = "G", mods = "LEADER", action = act.EmitEvent("open-grok") },
   { key = "?", mods = "LEADER", action = act.SendString("keys\r") },
   { key = "/", mods = "LEADER", action = act.SendString("keys\r") },
 
@@ -544,14 +553,6 @@ config.keys = {
   { key = "RightArrow", mods = "CTRL|ALT", action = act.AdjustPaneSize({ "Right", 4 }) },
   { key = "UpArrow", mods = "CTRL|ALT", action = act.AdjustPaneSize({ "Up", 2 }) },
   { key = "DownArrow", mods = "CTRL|ALT", action = act.AdjustPaneSize({ "Down", 2 }) },
-
-  { key = "C", mods = "CTRL|SHIFT", action = act.CopyTo("Clipboard") },
-  { key = "V", mods = "CTRL|SHIFT", action = act.PasteFrom("Clipboard") },
-  { key = "F", mods = "CTRL|SHIFT", action = act.Search("CurrentSelectionOrEmptyString") },
-  { key = "X", mods = "CTRL|SHIFT", action = act.ActivateCopyMode },
-  { key = "Q", mods = "CTRL|SHIFT", action = act.QuickSelect },
-  { key = "O", mods = "CTRL|SHIFT", action = act.EmitEvent("toggle-opacity") },
-  { key = "K", mods = "CTRL|SHIFT", action = act.ClearScrollback("ScrollbackAndViewport") },
 }
 
 for i = 1, 9 do
@@ -578,46 +579,22 @@ config.key_tables = {
 }
 
 config.mouse_bindings = {
-  -- Select + copy to Windows clipboard on mouse-up
-  {
-    event = { Up = { streak = 1, button = "Left" } },
-    mods = "NONE",
-    action = act.CompleteSelection("Clipboard"),
-  },
   {
     event = { Up = { streak = 1, button = "Left" } },
     mods = "CTRL",
     action = act.OpenLinkAtMouseCursor,
   },
-  -- Right-click paste (Windows habit)
   {
     event = { Down = { streak = 1, button = "Right" } },
     mods = "NONE",
     action = act.PasteFrom("Clipboard"),
   },
-  {
-    event = { Down = { streak = 3, button = "Left" } },
-    mods = "NONE",
-    action = act.SelectTextAtMouseCursor("SemanticZone"),
-  },
 }
 
 config.colors = theme_overrides(active_theme())
 
-local function pane_fs_path(pane)
-  local cwd = pane:get_current_working_dir()
-  if not cwd then
-    return nil
-  end
-  local path = cwd.file_path or tostring(cwd)
-  path = tostring(path):gsub("^file:///", ""):gsub("^file://", ""):gsub("%%20", " ")
-  -- file:///C:/Users/... → C:/Users/...
-  path = path:gsub("^/([A-Za-z]):", "%1:"):gsub("/", "\\")
-  return path
-end
-
 wezterm.on("open-in-explorer", function(window, pane)
-  local path = pane_fs_path(pane)
+  local path = mux_path(pane)
   if not path or path == "" then
     window:toast_notification("WezTerm", "No cwd yet — press Enter once in the shell", nil, 2500)
     return
@@ -626,7 +603,7 @@ wezterm.on("open-in-explorer", function(window, pane)
 end)
 
 wezterm.on("copy-cwd", function(window, pane)
-  local path = pane_fs_path(pane)
+  local path = mux_path(pane)
   if not path or path == "" then
     window:toast_notification("WezTerm", "No cwd yet — press Enter once in the shell", nil, 2500)
     return
@@ -636,7 +613,7 @@ wezterm.on("copy-cwd", function(window, pane)
 end)
 
 wezterm.on("open-lazygit", function(window, pane)
-  local path = pane_fs_path(pane) or work_root
+  local path = mux_path(pane) or work_root
   window:perform_action(
     act.SpawnCommandInNewTab({
       cwd = path,
@@ -646,8 +623,41 @@ wezterm.on("open-lazygit", function(window, pane)
   )
 end)
 
--- Kept for the keybind, but OLED default stays fully opaque black (battery).
--- Toggle still works if you ever want Acrylic; prefer leaving it opaque on OLED.
+-- New GUI process + Grok profile. Same-process spawn would keep CLI keybinds.
+wezterm.on("open-grok", function(window, pane)
+  if not file_exists(grok_exe) then
+    window:toast_notification("WezTerm", "grok.exe not found at ~/.grok/bin", nil, 3000)
+    return
+  end
+  if not file_exists(grok_cfg) then
+    window:toast_notification("WezTerm", "Missing ~/.wezterm-grok.lua", nil, 3000)
+    return
+  end
+  local cwd = mux_path(pane) or work_root
+  -- Win32_Process.Create is parented by WMI, not this WezTerm job.
+  -- Otherwise closing this window (job kill) also kills the Grok GUI.
+  local command_line = string.format(
+    '"%s" --config-file "%s" start --always-new-process --class WezTermGrok --cwd "%s" -- "%s"',
+    wezterm_gui,
+    grok_cfg,
+    cwd,
+    grok_exe
+  )
+  local ps = string.format(
+    "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '%s'; CurrentDirectory = '%s' } | Out-Null",
+    command_line:gsub("'", "''"),
+    cwd:gsub("'", "''")
+  )
+  wezterm.run_child_process({
+    "powershell.exe",
+    "-NoProfile",
+    "-WindowStyle",
+    "Hidden",
+    "-Command",
+    ps,
+  })
+end)
+
 wezterm.on("toggle-opacity", function(window, pane)
   local overrides = window:get_config_overrides() or {}
   local current = overrides.window_background_opacity or config.window_background_opacity
@@ -699,78 +709,37 @@ wezterm.on("toggle-zen", function(window, pane)
   window:set_config_overrides(overrides)
 end)
 
--- Taskbar / Alt-Tab title (Windows Terminal style: useful, short, stable)
-wezterm.on("format-window-title", function(tab, pane, tabs, panes, config)
-  local dir = current_dir(pane)
-  local proc = process_name(pane):gsub("%.exe$", ""):gsub("%.EXE$", "")
-  local n = #tabs
-
-  -- Prefer folder name; fall back to shell name
-  local head = dir
-  if head == "" or head == nil then
-    head = (proc ~= "" and proc) or "shell"
-  end
-
-  -- Zoom hint when a pane is maximized inside the window
-  local zoom = ""
-  if tab.active_pane and tab.active_pane.is_zoomed then
-    zoom = " • zoom"
-  end
-
+wezterm.on("format-window-title", function(tab, pane, tabs, panes, cfg)
+  local info = pane or (tab and tab.active_pane)
+  local head = tab_label(info)
+  local zoom = (info and info.is_zoomed) and " • zoom" or ""
+  local n = tabs and #tabs or 1
   if n > 1 then
     return string.format("%s (%d)%s — WezTerm", head, n, zoom)
   end
   return string.format("%s%s — WezTerm", head, zoom)
 end)
 
-wezterm.on("format-tab-title", function(tab, tabs, panes, config, hover, max_width)
-  local palette = active_theme()
+wezterm.on("format-tab-title", function(tab, tabs, panes, cfg, hover, max_width)
   local pane = tab.active_pane
-  local title = current_dir(pane)
-  if title == "" then
-    title = process_name(pane)
-  end
-  if title == "" then
-    title = "shell"
-  end
-  -- Windows: "pwsh.exe" → "pwsh"
-  title = title:gsub("%.exe$", ""):gsub("%.EXE$", "")
-
-  local zoom = pane.is_zoomed and "·Z" or ""
+  local title = tab_label(pane)
+  local zoom = (pane and pane.is_zoomed) and " Z" or ""
   local index = tab.tab_index + 1
-  -- Leave room for index + padding + inter-tab gap
-  title = wezterm.truncate_right(title, math.max(4, max_width - 8))
+  local width = max_width or 32
+  title = wezterm.truncate_right(title, math.max(4, width - 6))
 
-  -- Gap bar is pure black; tab chips have their own fill so they don't fuse.
-  local gap = "#000000"
-  local bg = "#1a1b26"
-  local fg = palette.muted
-  if tab.is_active then
-    bg = palette.purple
-    fg = "#000000"
-  elseif hover then
-    bg = palette.selection
-    fg = palette.fg
-  end
-
+  local intensity = tab.is_active and "Bold" or "Normal"
   return {
-    { Background = { Color = gap } },
-    { Foreground = { Color = gap } },
-    { Text = "  " },
-    { Background = { Color = bg } },
-    { Foreground = { Color = fg } },
-    { Attribute = { Intensity = tab.is_active and "Bold" or "Normal" } },
+    { Attribute = { Intensity = intensity } },
     { Text = string.format(" %d %s%s ", index, title, zoom) },
-    { Background = { Color = gap } },
-    { Foreground = { Color = gap } },
-    { Text = " " },
   }
 end)
 
+-- No git(1) from the GUI process — run_child_process on the status tick
+-- froze/crashed 20240203 (stdio panic in the log).
 wezterm.on("update-right-status", function(window, pane)
   local palette = active_theme()
-  local cwd = current_dir(pane)
-  local git_branch = git_branch_for_path(current_path(pane))
+  local cwd = mux_dir(pane)
   local leader = window:leader_is_active() and " LEADER " or ""
 
   window:set_left_status(wezterm.format({
@@ -782,16 +751,6 @@ wezterm.on("update-right-status", function(window, pane)
   if cwd ~= "" then
     table.insert(status, { Foreground = { Color = palette.cyan } })
     table.insert(status, { Text = cwd })
-  end
-  if git_branch ~= "" then
-    if #status > 0 then
-      table.insert(status, { Foreground = { Color = palette.dim } })
-      table.insert(status, { Text = "  |  " })
-    end
-    table.insert(status, { Foreground = { Color = palette.purple } })
-    table.insert(status, { Text = git_branch })
-  end
-  if #status > 0 then
     table.insert(status, { Foreground = { Color = palette.dim } })
     table.insert(status, { Text = "  |  " })
   end
