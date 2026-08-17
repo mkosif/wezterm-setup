@@ -43,25 +43,7 @@ local function resolve_pwsh()
   return "C:\\Program Files\\PowerShell\\7\\pwsh.exe"
 end
 
--- wezterm.exe is a CONSOLE app: Start/cmd wraps it in Windows Terminal and
--- killing that console kills Grok. Always launch wezterm-gui.exe (GUI).
-local function resolve_wezterm_gui()
-  local pf = os.getenv("ProgramFiles")
-  local candidates = {
-    pf and (pf .. "\\WezTerm\\wezterm-gui.exe"),
-    "C:\\Program Files\\WezTerm\\wezterm-gui.exe",
-  }
-  for _, p in ipairs(candidates) do
-    if file_exists(p) then
-      return p
-    end
-  end
-  return "C:\\Program Files\\WezTerm\\wezterm-gui.exe"
-end
-
-local wezterm_gui = resolve_wezterm_gui()
 local grok_exe = home .. "\\.grok\\bin\\grok.exe"
-local grok_cfg = home .. "\\.wezterm-grok.lua"
 
 local pwsh = is_windows and resolve_pwsh() or "pwsh"
 -- Documents\PowerShell $PROFILE is blocked by Controlled Folder Access, so
@@ -194,9 +176,7 @@ local function theme_overrides(theme)
   return {
     foreground = theme.fg,
     background = "#000000",
-    cursor_bg = theme.yellow,
-    cursor_border = theme.yellow,
-    cursor_fg = "#000000",
+    -- Leave cursor color to the app (Grok OSC 12). A fixed blink fights the TUI.
     selection_bg = theme.selection,
     selection_fg = theme.fg,
     scrollbar_thumb = theme.dim,
@@ -363,6 +343,7 @@ config.max_fps = 60
 config.animation_fps = 60
 
 config.enable_kitty_graphics = true
+config.enable_kitty_keyboard = true
 
 config.font = wezterm.font_with_fallback({
   { family = "JetBrainsMono NFM", weight = "Regular" },
@@ -419,15 +400,15 @@ config.visual_bell = {
   fade_out_duration_ms = 120,
 }
 
-config.cursor_blink_rate = 530
-config.default_cursor_style = "BlinkingBar"
+config.cursor_blink_rate = 0
+config.default_cursor_style = "SteadyBlock"
 config.force_reverse_video_cursor = false
 
 config.scrollback_lines = 20000
 config.enable_scroll_bar = false
 config.pane_focus_follows_mouse = false
 config.swallow_mouse_click_on_pane_focus = false
-config.allow_win32_input_mode = true
+config.allow_win32_input_mode = false
 config.status_update_interval = 1000
 config.canonicalize_pasted_newlines = "LineFeed"
 config.skip_close_confirmation_for_processes_named = {
@@ -440,6 +421,8 @@ config.skip_close_confirmation_for_processes_named = {
   "cmd.exe",
   "pwsh.exe",
   "powershell.exe",
+  "grok.exe",
+  "grok",
 }
 
 config.hyperlink_rules = wezterm.default_hyperlink_rules()
@@ -462,6 +445,7 @@ config.set_environment_variables = {
 config.leader = { key = "Space", mods = "CTRL|SHIFT", timeout_milliseconds = 1500 }
 
 config.launch_menu = {
+  { label = "Grok", args = { grok_exe } },
   { label = "PowerShell 7", args = default_shell },
   { label = "Windows PowerShell", args = { "powershell.exe", "-NoLogo" } },
   { label = "Command Prompt", args = { "cmd.exe" } },
@@ -493,9 +477,10 @@ config.keys = {
     }),
   },
 
+  -- New tab = shell. First window / Ctrl+Shift+N / Ctrl+Shift+G = Grok.
   { key = "T", mods = "CTRL|SHIFT", action = act.SpawnTab("CurrentPaneDomain") },
   { key = "W", mods = "CTRL|SHIFT", action = act.CloseCurrentTab({ confirm = false }) },
-  { key = "N", mods = "CTRL|SHIFT", action = act.SpawnWindow },
+  { key = "N", mods = "CTRL|SHIFT", action = act.EmitEvent("open-grok-window") },
   { key = "Tab", mods = "CTRL", action = act.ActivateTabRelative(1) },
   { key = "Tab", mods = "CTRL|SHIFT", action = act.ActivateTabRelative(-1) },
   { key = "F11", mods = "NONE", action = act.ToggleFullScreen },
@@ -505,9 +490,14 @@ config.keys = {
   { key = "-", mods = "CTRL", action = act.DecreaseFontSize },
   { key = "0", mods = "CTRL", action = act.ResetFontSize },
 
-  -- Windows Terminal muscle memory
+  -- Ctrl+V stays with the app (Grok image paste / PSReadLine). Shift+V is host paste.
   { key = "c", mods = "CTRL", action = copy_or_interrupt },
-  { key = "v", mods = "CTRL", action = act.PasteFrom("Clipboard") },
+  { key = "v", mods = "CTRL", action = act.DisableDefaultAssignment },
+  { key = "n", mods = "CTRL", action = act.DisableDefaultAssignment },
+  { key = "Enter", mods = "CTRL", action = act.DisableDefaultAssignment },
+  { key = "Enter", mods = "SHIFT", action = act.DisableDefaultAssignment },
+  { key = "Enter", mods = "ALT", action = act.DisableDefaultAssignment },
+  { key = "v", mods = "ALT", action = act.DisableDefaultAssignment },
   { key = "C", mods = "CTRL|SHIFT", action = act.CopyTo("Clipboard") },
   { key = "V", mods = "CTRL|SHIFT", action = act.PasteFrom("Clipboard") },
   { key = "F", mods = "CTRL|SHIFT", action = act.Search("CurrentSelectionOrEmptyString") },
@@ -623,39 +613,52 @@ wezterm.on("open-lazygit", function(window, pane)
   )
 end)
 
--- New GUI process + Grok profile. Same-process spawn would keep CLI keybinds.
+wezterm.on("gui-startup", function(cmd)
+  local mux = wezterm.mux
+  local cwd = work_root
+  if cmd and cmd.cwd and tostring(cmd.cwd) ~= "" then
+    cwd = cmd.cwd
+  end
+  local args
+  if cmd and cmd.args and #cmd.args > 0 then
+    args = cmd.args
+  elseif file_exists(grok_exe) then
+    args = { grok_exe }
+  else
+    args = default_shell
+  end
+  mux.spawn_window({
+    args = args,
+    cwd = cwd,
+  })
+end)
+
 wezterm.on("open-grok", function(window, pane)
   if not file_exists(grok_exe) then
     window:toast_notification("WezTerm", "grok.exe not found at ~/.grok/bin", nil, 3000)
     return
   end
-  if not file_exists(grok_cfg) then
-    window:toast_notification("WezTerm", "Missing ~/.wezterm-grok.lua", nil, 3000)
+  window:perform_action(
+    act.SpawnCommandInNewTab({
+      cwd = mux_path(pane) or work_root,
+      args = { grok_exe },
+    }),
+    pane
+  )
+end)
+
+wezterm.on("open-grok-window", function(window, pane)
+  if not file_exists(grok_exe) then
+    window:toast_notification("WezTerm", "grok.exe not found at ~/.grok/bin", nil, 3000)
     return
   end
-  local cwd = mux_path(pane) or work_root
-  -- Win32_Process.Create is parented by WMI, not this WezTerm job.
-  -- Otherwise closing this window (job kill) also kills the Grok GUI.
-  local command_line = string.format(
-    '"%s" --config-file "%s" start --always-new-process --class WezTermGrok --cwd "%s" -- "%s"',
-    wezterm_gui,
-    grok_cfg,
-    cwd,
-    grok_exe
+  window:perform_action(
+    act.SpawnCommandInNewWindow({
+      cwd = mux_path(pane) or work_root,
+      args = { grok_exe },
+    }),
+    pane
   )
-  local ps = string.format(
-    "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '%s'; CurrentDirectory = '%s' } | Out-Null",
-    command_line:gsub("'", "''"),
-    cwd:gsub("'", "''")
-  )
-  wezterm.run_child_process({
-    "powershell.exe",
-    "-NoProfile",
-    "-WindowStyle",
-    "Hidden",
-    "-Command",
-    ps,
-  })
 end)
 
 wezterm.on("toggle-opacity", function(window, pane)

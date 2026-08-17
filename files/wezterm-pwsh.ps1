@@ -95,7 +95,7 @@ if (Get-Command lazygit -ErrorAction SilentlyContinue) {
     Set-Alias -Name lg -Value lazygit -Scope Global -Force
 }
 
-# Interactive `grok` / `gg` → separate WezTerm (Grok profile). CLI subcommands stay here.
+# Same process — WezTerm is already Grok-capable. No second GUI.
 function global:grok {
     $grokExe = Join-Path $env:USERPROFILE ".grok\bin\grok.exe"
     if (-not (Test-Path -LiteralPath $grokExe)) {
@@ -106,66 +106,6 @@ function global:grok {
         Write-Error "grok.exe not found"
         return
     }
-
-    if ($env:WEZTERM_GROK_PROFILE -eq "1") {
-        & $grokExe @args
-        return
-    }
-
-    $cli = @(
-        "agent", "completions", "doctor", "du", "disk-usage", "export", "help",
-        "inspect", "leader", "login", "logout", "mcp", "memory", "models",
-        "plugin", "sessions", "setup", "trace", "update", "version", "v",
-        "worktree", "wrap"
-    )
-    $headlessFlags = @(
-        "-h", "--help", "-v", "--version", "-p", "--single",
-        "--output-format", "--json-schema", "--prompt-file", "--prompt-json"
-    )
-
-    $headless = $false
-    if ($args.Count -gt 0) {
-        if ($cli -contains [string]$args[0]) {
-            $headless = $true
-        }
-        else {
-            foreach ($a in $args) {
-                if ($headlessFlags -contains [string]$a) {
-                    $headless = $true
-                    break
-                }
-            }
-        }
-    }
-
-    $cfg = Join-Path $env:USERPROFILE ".wezterm-grok.lua"
-    $gui = "C:\Program Files\WezTerm\wezterm-gui.exe"
-    if (-not (Test-Path -LiteralPath $gui)) {
-        $wez = Get-Command wezterm -ErrorAction SilentlyContinue
-        if ($wez) {
-            $sibling = Join-Path (Split-Path -Parent $wez.Source) "wezterm-gui.exe"
-            if (Test-Path -LiteralPath $sibling) { $gui = $sibling }
-        }
-    }
-    if (-not $headless -and (Test-Path -LiteralPath $gui) -and (Test-Path -LiteralPath $cfg)) {
-        $cwd = (Get-Location).Path
-        $extra = foreach ($a in $args) { ' "' + ([string]$a).Replace('"', '\"') + '"' }
-        # WMI Create runs as a service child — not in WezTerm's job object.
-        # cmd start / Start-Process stay in the pane job; closing this window then kills Grok.
-        $commandLine = '"{0}" --config-file "{1}" start --always-new-process --class WezTermGrok --cwd "{2}" -- "{3}"{4}' -f @(
-            $gui,
-            $cfg,
-            $cwd.Replace('"', ''),
-            $grokExe,
-            (-join $extra)
-        )
-        Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
-            CommandLine      = $commandLine
-            CurrentDirectory = $cwd
-        } | Out-Null
-        return
-    }
-
     & $grokExe @args
 }
 Set-Alias -Name gg -Value grok -Scope Global -Force

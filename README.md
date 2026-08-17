@@ -1,6 +1,8 @@
 # wezterm-setup
 
-Personal WezTerm bootstrap (Windows 11): OLED-friendly config, PowerShell 7 default shell, JetBrainsMono Nerd Font Mono.
+Personal WezTerm bootstrap (Windows 11): **Grok-focused** single profile (Kitty keyboard, Grok chords passed through), OLED themes, PowerShell 7 in extra tabs, JetBrainsMono Nerd Font Mono.
+
+`main` is the older shell-first + optional separate Grok host. This branch (`grok-focused`) is the live setup.
 
 **Public repo:** https://github.com/mkosif/wezterm-setup
 
@@ -70,7 +72,6 @@ docs/NEW-MACHINE.md       detailed new-machine guide
 | Repo | Machine |
 |------|---------|
 | `files/wezterm.lua` | `~\.wezterm.lua` |
-| `files/wezterm-grok.lua` | `~\.wezterm-grok.lua` (Grok host; separate process) |
 | `files/wezterm-pwsh.ps1` | `~\config\wezterm-pwsh.ps1` |
 | `files/wezterm-keys.md` | `~\config\wezterm-keys.md` |
 | `files/powershell-profile-snippet.ps1` | `~\config\powershell-profile-snippet.ps1` |
@@ -79,7 +80,9 @@ docs/NEW-MACHINE.md       detailed new-machine guide
 
 | Item | Value |
 |------|--------|
-| Default shell (WezTerm) | PowerShell 7 (`pwsh`) |
+| First window | Grok (`~\.grok\bin\grok.exe`) |
+| New tab (`Ctrl+Shift+T` / +) | PowerShell 7 (`pwsh`) |
+| New Grok tab | `Ctrl+Shift+G` |
 | Shell init | `~\config\wezterm-pwsh.ps1` |
 | Font | `JetBrainsMono Nerd Font Mono` (with fallbacks) |
 | Default cwd | `~\work` |

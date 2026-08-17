@@ -9,10 +9,6 @@
       Target = '$Home\.wezterm.lua'
     }
     @{
-      Source = 'files/wezterm-grok.lua'
-      Target = '$Home\.wezterm-grok.lua'
-    }
-    @{
       Source = 'files/wezterm-pwsh.ps1'
       Target = '$Home\config\wezterm-pwsh.ps1'
     }

@@ -2,6 +2,9 @@
 
 Type **`keys`** in the terminal anytime to print this guide.
 
+This WezTerm is **Grok-focused** (Kitty keyboard, Grok chords not stolen).
+Startup opens Grok. **New tab** (`Ctrl+Shift+T` or **+**) is a normal `pwsh` shell.
+
 Leader = **Ctrl+Shift+Space** (press, release, then the next key).
 `Ctrl+Space` is left alone — that is PSReadLine completion.
 
@@ -10,6 +13,7 @@ Leader = **Ctrl+Shift+Space** (press, release, then the next key).
 | Command | What it does |
 |--------|----------------|
 | `keys` / `helpme` | Show this cheatsheet |
+| `grok` / `gg` | Run Grok **in this tab** |
 | `z <name>` | Jump to a frecent folder (zoxide) |
 | `zi` | Interactive folder pick (fzf) |
 | `ll` | Long list (eza) |
@@ -25,23 +29,22 @@ Leader = **Ctrl+Shift+Space** (press, release, then the next key).
 | `ff <query>` | Search with ripgrep |
 | `fdf <query>` | Find files with fd |
 | `boot` | Copy AI BOOTSTRAP.md to clipboard |
-| `grok` / `gg` | Open Grok in its own WezTerm window (`grok doctor` etc. stay here) |
 
 ## WezTerm — keys
 
 | Keys | Action |
 |------|--------|
 | `Ctrl+C` | Copy if text is selected, otherwise interrupt |
-| `Ctrl+V` | Paste |
-| `Ctrl+Shift+C` / `V` | Copy / paste |
-| `Ctrl+Shift+T` | New tab |
+| `Ctrl+V` | Goes to the app (Grok image paste / PSReadLine) |
+| `Ctrl+Shift+C` / `V` | Host copy / paste |
+| `Ctrl+Shift+T` / **+** | New **shell** tab |
+| `Ctrl+Shift+G` | New **Grok** tab |
 | `Ctrl+Shift+W` | Close tab |
-| `Ctrl+Shift+N` | New window |
+| `Ctrl+Shift+N` | New window (starts Grok) |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / prev tab |
 | `Ctrl+Shift+F` | Search scrollback |
 | `Ctrl+Shift+P` | Command palette |
-| `Ctrl+Shift+L` | Launch menu (shells) |
-| `Ctrl+Shift+G` | Open Grok (separate window + Grok profile) |
+| `Ctrl+Shift+L` | Launch menu |
 | `Ctrl+Shift+Q` | Quick select (URLs, paths…) |
 | `Ctrl+Shift+,` | Open `.wezterm.lua` |
 | `Ctrl+Shift+R` | Reload config |
@@ -67,7 +70,7 @@ Leader = **Ctrl+Shift+Space** (press, release, then the next key).
 | `e` | Open folder in Explorer |
 | `y` | Copy path to clipboard |
 | `g` | lazygit in new tab |
-| `G` | Open Grok (separate window) |
+| `G` | New Grok tab |
 | `t` | Cycle theme (Soft / Day / …) |
 | `o` | Toggle opacity (prefer off on OLED) |
 | `Enter` | Zen mode (hide tab bar) |
@@ -87,5 +90,4 @@ Leader = **Ctrl+Shift+Space** (press, release, then the next key).
 - New tab inherits the current folder after OSC 7 fires (after the first prompt).
 - Status bar = folder name + time.
 - Window chrome is the real Windows title bar (min/max/close). Tab bar is below it.
-- `grok` / `Ctrl+Shift+G` starts a **separate** WezTerm process (`~\.wezterm-grok.lua`): Kitty keyboard on, `Ctrl+V` / `Ctrl+Enter` / `Alt+V` go to Grok. CLI WezTerm keys stay as they are. `grok doctor`, `grok update`, `grok -p` run in the current shell.
-- In the Grok window: `Ctrl+Shift+T` or the **+** button opens another Grok tab. `Ctrl+Tab` / `Alt+1`…`9` switch. `Ctrl+Shift+W` closes that tab.
+- Grok chords stay in the PTY: `Ctrl+Enter`, `Shift+Enter`, `Alt+V`, `Ctrl+N`, `Ctrl+V`.
