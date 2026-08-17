@@ -129,13 +129,14 @@ config.window_frame = {
   button_hover_bg = theme.purple,
 }
 
--- ========== NO BLINK ==========
+-- Grok hides/shows the hardware cursor on every idle paint. Reverse-video
+-- turned that into a full-cell strobe. A thin steady bar is the least visible
+-- leftover; WezTerm cannot block the app's cursor hide.
 config.cursor_blink_rate = 0
 config.cursor_blink_ease_in = "Constant"
 config.cursor_blink_ease_out = "Constant"
-config.default_cursor_style = "SteadyBlock"
--- Invert the cell instead of a colored bar. Grok's OSC 12 cannot fight it.
-config.force_reverse_video_cursor = true
+config.default_cursor_style = "SteadyBar"
+config.force_reverse_video_cursor = false
 config.audible_bell = "Disabled"
 
 config.scrollback_lines = 50000
