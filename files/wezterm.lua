@@ -77,7 +77,8 @@ config.exit_behavior = "CloseOnCleanExit"
 -- Stable on this Windows build (WebGpu flickered).
 config.front_end = "OpenGL"
 config.max_fps = 60
-config.animation_fps = 1
+-- 1 fps made leftover cursor/title animation look like a broken blink.
+config.animation_fps = 60
 
 -- Grok / modern TUI
 config.enable_kitty_graphics = true
@@ -133,12 +134,9 @@ config.cursor_blink_rate = 0
 config.cursor_blink_ease_in = "Constant"
 config.cursor_blink_ease_out = "Constant"
 config.default_cursor_style = "SteadyBlock"
-config.force_reverse_video_cursor = false
+-- Invert the cell instead of a colored bar. Grok's OSC 12 cannot fight it.
+config.force_reverse_video_cursor = true
 config.audible_bell = "Disabled"
-config.visual_bell = {
-  fade_in_duration_ms = 0,
-  fade_out_duration_ms = 0,
-}
 
 config.scrollback_lines = 50000
 config.enable_scroll_bar = false
@@ -163,9 +161,6 @@ config.color_scheme = "Dracula (Official)"
 config.colors = {
   foreground = theme.fg,
   background = "#000000",
-  cursor_bg = theme.yellow,
-  cursor_fg = "#000000",
-  cursor_border = theme.yellow,
   selection_bg = theme.selection,
   selection_fg = theme.fg,
   split = theme.dim,
